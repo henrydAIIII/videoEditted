@@ -28,7 +28,7 @@
 使用 PPT 视频在当前 scene 时间范围内的片段，按 contain 模式放入 16:9 画布，避免裁掉课件内容。
 
 ### `main_scene_type = speaker`
-使用讲者视频在当前 scene 时间范围内的片段，按 cover 模式铺满画布。
+使用 PPT 视频作为主画面，同时把讲者视频在当前 scene 时间范围内的片段以右下角悬浮窗叠加到 PPT 页面上；不再让讲者画面整屏霸屏。
 
 ### `main_scene_type = ai_card`
 生成整屏卡片画面，显示 `card.title` 和 `card.body`；没有 card 时回退到 `headline` 和 `transcript_excerpt`。
