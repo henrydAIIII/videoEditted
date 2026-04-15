@@ -13,13 +13,14 @@ from moviepy import (
     ColorClip,
     CompositeVideoClip,
     ImageClip,
+    VideoClip,
     VideoFileClip,
     concatenate_audioclips,
     concatenate_videoclips,
 )
 from moviepy.audio.AudioClip import AudioClip
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 RENDER_VERSION = "2026-04-15"
 DEFAULT_CANVAS_WIDTH = int(os.getenv("VIDEO_EDITTED_RENDER_WIDTH", "1280"))
@@ -27,6 +28,11 @@ DEFAULT_CANVAS_HEIGHT = int(os.getenv("VIDEO_EDITTED_RENDER_HEIGHT", "720"))
 DEFAULT_FPS = int(os.getenv("VIDEO_EDITTED_RENDER_FPS", "24"))
 DEFAULT_MAX_OUTPUT_SECONDS = os.getenv("VIDEO_EDITTED_RENDER_MAX_SECONDS")
 MIN_CLIP_SECONDS = 0.08
+FLOATING_CARD_TRIGGER_DELAY = 0.5
+FLOATING_CARD_MIN_DURATION = 3.0
+FLOATING_CARD_MAX_DURATION = 5.0
+FLOATING_CARD_DEFAULT_DURATION = 4.0
+FLOATING_CARD_FADE_DURATION = 0.36
 
 FONT_CANDIDATES = (
     "/System/Library/Fonts/PingFang.ttc",
@@ -145,6 +151,75 @@ def make_rgba_clip(image: Image.Image, duration: float) -> ImageClip:
     return ImageClip(np.asarray(image)).with_duration(duration)
 
 
+def clamp_text(text: Any, max_chars: int) -> str:
+    normalized = " ".join(str(text or "").replace("...", "").replace("…", "").split())
+    if len(normalized) <= max_chars:
+        return normalized
+    return f"{normalized[:max_chars].rstrip()}..."
+
+
+def compact_body_text(body: Any, max_chars: int = 18) -> str:
+    if isinstance(body, list):
+        items = [" ".join(str(item or "").split()) for item in body if item]
+        if len(items) >= 2:
+            first = items[0].replace("...", "").replace("…", "")[:7]
+            second = items[1].replace("...", "").replace("…", "")
+            return clamp_text(f"{first} · {second}", max_chars)
+        if items:
+            return clamp_text(items[0], max_chars)
+    return clamp_text(body, max_chars)
+
+
+def rounded_gradient_layer(
+    size: tuple[int, int],
+    radius: int,
+    top_color: tuple[int, int, int, int],
+    bottom_color: tuple[int, int, int, int],
+) -> Image.Image:
+    width, height = size
+    gradient = Image.new("RGBA", size, (0, 0, 0, 0))
+    pixels = gradient.load()
+    for y in range(height):
+        ratio = y / max(height - 1, 1)
+        color = tuple(
+            int(top_color[channel] * (1 - ratio) + bottom_color[channel] * ratio)
+            for channel in range(4)
+        )
+        for x in range(width):
+            pixels[x, y] = color
+
+    mask = Image.new("L", size, 0)
+    mask_draw = ImageDraw.Draw(mask)
+    mask_draw.rounded_rectangle((0, 0, width - 1, height - 1), radius=radius, fill=255)
+    gradient.putalpha(mask)
+    return gradient
+
+
+def ease_in_out(progress: float) -> float:
+    progress = min(max(progress, 0.0), 1.0)
+    return progress * progress * (3 - 2 * progress)
+
+
+def make_eased_fade_clip(image: Image.Image, duration: float, fade_duration: float) -> ImageClip:
+    duration = max(duration, MIN_CLIP_SECONDS)
+    rgba = image.convert("RGBA")
+    frame = np.asarray(rgba)
+    rgb = frame[:, :, :3]
+    alpha = frame[:, :, 3].astype(float) / 255.0
+    fade = min(fade_duration, duration / 2)
+
+    def mask_frame(t: float):
+        opacity = 1.0
+        if fade > 0 and t < fade:
+            opacity = ease_in_out(t / fade)
+        elif fade > 0 and t > duration - fade:
+            opacity = ease_in_out((duration - t) / fade)
+        return alpha * opacity
+
+    mask = VideoClip(mask_frame, is_mask=True, duration=duration)
+    return ImageClip(rgb).with_duration(duration).with_mask(mask)
+
+
 def make_fullscreen_card_image(scene: dict[str, Any], size: tuple[int, int]) -> Image.Image:
     width, height = size
     image = Image.new("RGBA", size, (18, 22, 28, 255))
@@ -215,47 +290,138 @@ def make_fullscreen_card_image(scene: dict[str, Any], size: tuple[int, int]) -> 
 
 def make_overlay_card_image(overlay: dict[str, Any], size: tuple[int, int]) -> Image.Image:
     width, height = size
-    card_width = min(460, int(width * 0.38))
-    card_height = min(220, int(height * 0.32))
-    image = Image.new("RGBA", (card_width, card_height), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
+    card_width = min(420, int(width * 0.34))
+    card_height = min(150, int(height * 0.22))
+    shadow_pad = 32
+    radius = min(34, max(24, card_height // 4))
+    image = Image.new(
+        "RGBA",
+        (card_width + shadow_pad * 2, card_height + shadow_pad * 2),
+        (0, 0, 0, 0),
+    )
 
+    card_box = (
+        shadow_pad,
+        shadow_pad,
+        shadow_pad + card_width,
+        shadow_pad + card_height,
+    )
+    shadow = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    shadow_draw = ImageDraw.Draw(shadow)
+    shadow_draw.rounded_rectangle(
+        (
+            card_box[0] + 4,
+            card_box[1] + 10,
+            card_box[2] + 4,
+            card_box[3] + 10,
+        ),
+        radius=radius,
+        fill=(0, 0, 0, 86),
+    )
+    image.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(18)))
+
+    glass = rounded_gradient_layer(
+        (card_width, card_height),
+        radius=radius,
+        top_color=(55, 222, 190, 210),
+        bottom_color=(28, 43, 64, 218),
+    )
+    image.alpha_composite(glass, (shadow_pad, shadow_pad))
+
+    draw = ImageDraw.Draw(image)
     draw.rounded_rectangle(
-        (0, 0, card_width - 1, card_height - 1),
-        radius=18,
-        fill=(248, 248, 245, 238),
-        outline=(214, 218, 211, 255),
+        card_box,
+        radius=radius,
+        outline=(255, 255, 255, 96),
         width=2,
     )
-    draw.rectangle((0, 0, 10, card_height), fill=(74, 193, 161, 255))
+    draw.rounded_rectangle(
+        (
+            card_box[0] + 30,
+            card_box[1] + 26,
+            card_box[0] + 64,
+            card_box[1] + 30,
+        ),
+        radius=2,
+        fill=(255, 255, 255, 120),
+    )
 
-    title_font = load_font(34)
-    body_font = load_font(22)
-    label_font = load_font(16)
+    title_font = load_font(max(28, width // 42))
+    body_font = load_font(max(18, width // 64))
 
-    title = str(overlay.get("title") or "关键人物")
-    body = overlay.get("body") or []
-    body_text = " ".join(str(item) for item in body if item)
-    max_text_width = card_width - 64
+    title = clamp_text(overlay.get("title") or "关键提示", 15)
+    body_text = compact_body_text(overlay.get("body") or overlay.get("text") or [], 18)
+    max_text_width = card_width - 56
+    text_x = shadow_pad + 30
+    text_y = shadow_pad + 42
 
-    draw.text((34, 24), "人物信息", font=label_font, fill=(91, 101, 112, 255))
     render_text_lines(
         draw,
         wrap_text(title, draw, title_font, max_text_width, 1),
-        (34, 52),
+        (text_x, text_y),
         title_font,
-        (22, 28, 35, 255),
+        (255, 255, 250, 255),
         line_gap=10,
     )
     render_text_lines(
         draw,
-        wrap_text(body_text, draw, body_font, max_text_width, 3),
-        (34, 104),
+        wrap_text(body_text, draw, body_font, max_text_width, 1),
+        (text_x, text_y + 52),
         body_font,
-        (54, 62, 72, 255),
+        (235, 246, 246, 224),
         line_gap=10,
     )
     return image
+
+
+def floating_card_timing(scene_duration: float) -> tuple[float, float]:
+    start = min(FLOATING_CARD_TRIGGER_DELAY, max(0.0, scene_duration - MIN_CLIP_SECONDS))
+    available = max(MIN_CLIP_SECONDS, scene_duration - start)
+    if available < FLOATING_CARD_MIN_DURATION:
+        return start, available
+    duration = min(FLOATING_CARD_DEFAULT_DURATION, available, FLOATING_CARD_MAX_DURATION)
+    return start, max(FLOATING_CARD_MIN_DURATION, duration)
+
+
+def floating_card_position(
+    image: Image.Image,
+    size: tuple[int, int],
+    main_scene_type: str | None,
+    anchor: str | None = None,
+) -> tuple[int, int]:
+    width, height = size
+    margin_x = max(36, int(width * 0.035))
+    top_margin = max(34, int(height * 0.06))
+    subtitle_clearance = max(118, int(height * 0.17))
+    x = width - image.width - margin_x
+    if main_scene_type == "speaker" or anchor == "right_upper":
+        y = top_margin
+    else:
+        y = height - image.height - subtitle_clearance
+    return max(0, x), max(0, y)
+
+
+def make_floating_card_clip(
+    overlay: dict[str, Any],
+    scene_duration: float,
+    size: tuple[int, int],
+    main_scene_type: str | None,
+):
+    image = make_overlay_card_image(overlay, size)
+    if "local_start_seconds" in overlay:
+        start = max(0.0, float(overlay.get("local_start_seconds") or 0.0))
+        display_duration = float(
+            overlay.get("display_duration_seconds")
+            or overlay.get("local_duration_seconds")
+            or FLOATING_CARD_DEFAULT_DURATION
+        )
+        display_duration = min(display_duration, max(MIN_CLIP_SECONDS, scene_duration - start))
+    else:
+        start, display_duration = floating_card_timing(scene_duration)
+    clip = make_eased_fade_clip(image, display_duration, FLOATING_CARD_FADE_DURATION)
+    return clip.with_start(start).with_position(
+        floating_card_position(image, size, main_scene_type, overlay.get("anchor"))
+    )
 
 
 def make_subtitle_image(text: str, size: tuple[int, int]) -> Image.Image:
@@ -548,13 +714,12 @@ def make_scene_clip(
         card_image = make_fullscreen_card_image(scene, size)
         layers.append(make_rgba_clip(card_image, duration))
     else:
+        for floating_card in scene.get("floating_cards") or []:
+            layers.append(make_floating_card_clip(floating_card, duration, size, main_type))
+
         overlay = scene.get("overlay")
-        if overlay:
-            overlay_image = make_overlay_card_image(overlay, size)
-            overlay_clip = make_rgba_clip(overlay_image, max(duration - 0.35, MIN_CLIP_SECONDS))
-            x = size[0] - overlay_image.width - 54
-            y = size[1] - overlay_image.height - 120
-            layers.append(overlay_clip.with_start(min(0.35, duration / 4)).with_position((x, y)))
+        if overlay and overlay.get("type") == "ai_card" and not scene.get("floating_cards"):
+            layers.append(make_floating_card_clip(overlay, duration, size, main_type))
 
         subtitle_text = scene.get("transcript_excerpt") or scene.get("headline") or ""
         subtitle_image = make_subtitle_image(subtitle_text, size)

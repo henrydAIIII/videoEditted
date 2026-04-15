@@ -5,9 +5,12 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import re
 from typing import Any
+
+from pipeline.ai_cards import generate_ai_cards, generate_subtitles_json
 
 PLAN_VERSION = "2026-04-15"
 TARGET_BLOCK_MIN_SECONDS = 8.0
@@ -542,6 +545,45 @@ def build_summary(cues: list[SubtitleCue], scenes: list[dict[str, Any]], chapter
     }
 
 
+def attach_ai_cards_to_scenes(
+    plan: dict[str, Any],
+    ai_cards_payload: dict[str, Any],
+) -> dict[str, Any]:
+    cards = ai_cards_payload.get("cards") or []
+    if not cards:
+        return plan
+
+    for scene in plan.get("scenes", []):
+        scene_start = parse_plan_timecode(scene["start"])
+        scene_end = parse_plan_timecode(scene["end"])
+        floating_cards = []
+        for card in cards:
+            card_start = float(card.get("start_seconds") or 0.0)
+            card_end = float(card.get("end_seconds") or card_start)
+            if card_end <= scene_start or card_start >= scene_end:
+                continue
+            local_start = max(0.0, card_start - scene_start)
+            local_end = min(scene_end, card_end) - scene_start
+            floating_cards.append(
+                {
+                    **card,
+                    "local_start_seconds": round(local_start, 3),
+                    "local_end_seconds": round(local_end, 3),
+                    "local_duration_seconds": round(max(0.0, local_end - local_start), 3),
+                }
+            )
+
+        if floating_cards:
+            scene["floating_cards"] = floating_cards
+
+    plan.setdefault("source", {})
+    plan["source"]["ai_cards"] = "ai_cards.json"
+    plan["source"]["ai_cards_path"] = ai_cards_payload.get("output_path")
+    plan.setdefault("summary", {})
+    plan["summary"]["ai_card_count"] = len(cards)
+    return plan
+
+
 def load_analysis_scenes(scenes_path: Path | None) -> list[dict[str, Any]]:
     if scenes_path is None or not scenes_path.exists():
         return []
@@ -715,20 +757,35 @@ def generate_plan_from_job(job_dir: Path) -> Path:
     metadata = load_job_metadata(job_dir)
     subtitles_path = resolve_subtitles_path(job_dir, metadata)
     analysis_path = resolve_analysis_path(job_dir, metadata)
+    subtitles_json_path = job_dir / "subtitles.json"
+    ai_cards_path = job_dir / "ai_cards.json"
+    subtitles_payload = generate_subtitles_json(subtitles_path, subtitles_json_path)
+    ai_cards_payload = generate_ai_cards(
+        subtitles_json_path,
+        ai_cards_path,
+        use_model=not bool(os.getenv("PYTEST_CURRENT_TEST")),
+    )
+    ai_cards_payload["output_path"] = str(ai_cards_path)
     plan = generate_plan_from_srt(
         subtitles_path,
         job_id=metadata.get("job_id") or job_dir.name,
         scenes_path=analysis_path,
     )
+    plan = attach_ai_cards_to_scenes(plan, ai_cards_payload)
     plan_path = write_plan(plan, job_dir / "plan.json")
 
     metadata.setdefault("files", {})
+    metadata["files"]["subtitles_json"] = subtitles_json_path.name
+    metadata["files"]["ai_cards"] = ai_cards_path.name
     metadata["files"]["plan"] = plan_path.name
     metadata["planning"] = {
         "plan_version": plan["plan_version"],
         "generated_at": plan["generated_at"],
         "scene_count": plan["summary"]["scene_count"],
         "chapter_count": plan["summary"]["chapter_count"],
+        "subtitle_count": subtitles_payload["subtitle_count"],
+        "ai_card_count": ai_cards_payload["card_count"],
+        "ai_card_generator": ai_cards_payload.get("generator"),
     }
     metadata["updated_at"] = datetime.now(timezone.utc).isoformat()
     save_job_metadata(job_dir, metadata)

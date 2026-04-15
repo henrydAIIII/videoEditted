@@ -7,6 +7,8 @@
 ## 当前用途
 模型不参与整段视频逐帧分析，只在增强模式下用于关键帧理解。
 
+AI Floating Card 文案生成使用 OpenAI-Compatible Chat Completions，默认模型为 `qwen3-max-2026-01-23`，通过 `DASHSCOPE_API_KEY` 鉴权；未配置密钥时回退到本地规则生成短文案，保证默认流程不中断。
+
 ## 增强模式工作方式
 1. 本地先完成粗切页。
 2. 每个视觉段只取 1 张关键帧。
@@ -26,6 +28,8 @@
 - `VIDEO_EDITTED_QWEN_BASE_URL`
 - `VIDEO_EDITTED_QWEN_MODEL`
 - `VIDEO_EDITTED_SAMPLE_INTERVAL_SECONDS`
+
+本地开发可在项目根目录 `.env` 中配置这些变量；`pipeline/analyze.py` 与 `pipeline/ai_cards.py` 会自动读取该文件。`.env` 包含密钥，必须保持在 `.gitignore` 中。
 
 ## 默认取舍
 毕设默认关闭模型增强，原因：

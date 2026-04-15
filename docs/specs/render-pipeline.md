@@ -34,7 +34,10 @@
 生成整屏卡片画面，显示 `card.title` 和 `card.body`；没有 card 时回退到 `headline` 和 `transcript_excerpt`。
 
 ### `overlay.type = ai_card`
-在非整屏卡片镜头上叠加右下角人物信息浮窗，使用 `overlay.title` 与 `overlay.body`。
+在非整屏卡片镜头上叠加 AI Floating Card 轻量悬浮窗，使用 `overlay.title` 与 `overlay.body`。浮窗会在 0.5 秒后自动唤起，停留 3-5 秒，并使用 ease-in-out 淡入淡出；默认右下角，speaker 场景自动放到右上角以避开讲者画面。
+
+### `scene.floating_cards[]`
+优先使用 `plan.py` 从 `ai_cards.json` 挂载到 scene 的 `floating_cards`。每张卡使用自己的 `local_start_seconds`、`display_duration_seconds`、`title`、`text` 和 `anchor` 渲染。存在 `floating_cards` 时，不再使用旧的单个 `overlay` 兜底，避免重复叠卡。
 
 ### 字幕
 对非整屏卡片镜头，在底部渲染 `transcript_excerpt`，保证演示时可以跟随叙事内容。

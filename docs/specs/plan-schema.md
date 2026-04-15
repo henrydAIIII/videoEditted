@@ -98,3 +98,34 @@
 ## 当前定位
 `plan.json` 目前是“可渲染计划草案”，不是最终逐帧时间轴。
 后续 `render.py` 需要基于这个计划继续细化到实际素材调用、图层和字幕排布。
+
+## AI Card 中间产物
+规划阶段现在会额外产出两个结构化文件：
+
+- `subtitles.json`：由 `subtitles.srt` 解析得到，保留字幕 id、开始时间、结束时间、秒数和文本。
+- `ai_cards.json`：由 `subtitles.json` 生成，优先使用通义千问大模型生成短文案；没有 `DASHSCOPE_API_KEY` 时使用本地规则兜底。
+
+`ai_cards.json` 中的卡片会按时间挂载到 `plan.json.scenes[].floating_cards`，渲染阶段直接读取该字段叠加 AI Floating Card。
+
+`floating_cards` 单项结构：
+
+```json
+{
+  "id": "card_001",
+  "type": "ai_floating_card",
+  "start": "00:00:08.666",
+  "end": "00:00:13.666",
+  "start_seconds": 8.666,
+  "end_seconds": 13.666,
+  "duration_seconds": 5.0,
+  "title": "古希腊传统",
+  "text": "西方创新源头",
+  "source_subtitle_ids": [4, 5],
+  "anchor": "right_upper",
+  "trigger_delay_seconds": 0.5,
+  "display_duration_seconds": 4.0,
+  "local_start_seconds": 8.666,
+  "local_end_seconds": 13.666,
+  "local_duration_seconds": 5.0
+}
+```

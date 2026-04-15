@@ -52,6 +52,8 @@ def test_generate_plan_from_job_writes_plan_and_updates_metadata(tmp_path):
 
     assert plan_path == job_dir / "plan.json"
     assert plan_path.exists()
+    assert (job_dir / "subtitles.json").exists()
+    assert (job_dir / "ai_cards.json").exists()
 
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     assert plan["job_id"] == "job-001"
@@ -66,7 +68,11 @@ def test_generate_plan_from_job_writes_plan_and_updates_metadata(tmp_path):
 
     metadata = json.loads((job_dir / "job.json").read_text(encoding="utf-8"))
     assert metadata["files"]["plan"] == "plan.json"
+    assert metadata["files"]["subtitles_json"] == "subtitles.json"
+    assert metadata["files"]["ai_cards"] == "ai_cards.json"
     assert metadata["planning"]["scene_count"] == plan["summary"]["scene_count"]
+    assert metadata["planning"]["subtitle_count"] == 6
+    assert "ai_card_generator" in metadata["planning"]
 
 
 def test_person_name_does_not_trigger_speaker_role():
