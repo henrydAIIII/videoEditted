@@ -48,9 +48,9 @@ GET  /api/download/{job_id} 返回成品视频
 
 ## Demo规律（已从样例中提取，plan.py 需遵守）
 1. 观点陈述 → 切整屏大字 ai_card 强调
-2. 重要人物 → 人物出生年月，死亡日期，或者一句简短的话浮窗展示
-3. 章节切换 → speaker 镜头 8-15 秒
-4. speaker 期间可叠加 ai_card（graphic_overlay_cut）
+2. 重要人物 → 人物出生年月，死亡日期，或者一句简短的话作为文本信息候选；人物名本身不触发 speaker
+3. 视频开头 / 章节切换 → speaker 右下角悬浮叠加在 PPT 页面上，控制在 8-15 秒
+4. speaker 不整屏霸屏，PPT 始终作为主画面
 5. 知识点展示 → ppt 整屏 5-10 秒
 6. 段落高潮 → rapid_flash_cut 蒙太奇收束
 7. 普通切换用 hard_cut
@@ -66,6 +66,8 @@ GET  /api/download/{job_id} 返回成品视频
 ## 详细文档
 - 分析阶段方案：`docs/specs/analyze-pipeline.md`
 - 规划阶段与 `plan.json` 结构：`docs/specs/plan-schema.md`
+- 渲染阶段方案：`docs/specs/render-pipeline.md`
+- 渲染阶段细拆与验收：`docs/specs/task-4-render-breakdown.md`
 - 模型运行配置与成本/耗时取舍：`docs/specs/model-runtime.md`
 
 ## 开发顺序（严格按此推进）
@@ -78,7 +80,11 @@ GET  /api/download/{job_id} 返回成品视频
 7. 联调测试
 
 ## 当前进度
-- 2026-04-15：已完成步骤一。后端 FastAPI 基础框架已搭建，提供统一返回格式 `{code, data, message}`，并实现 `POST /api/upload` 上传接口，素材会写入 `assets/{job_id}/` 并生成初始任务元数据。
-- 2026-04-15：已实现 `pipeline/analyze.py`，支持对 `ppt_video` 做本地换页分析，并预留 `qwen3.6-plus-2026-04-02` 的可选关键帧语义增强。
-- 2026-04-15：已实现 `pipeline/plan.py` 与 `scenes.json` 联动，当前可以基于 `ppt_video + subtitles.srt` 生成新的 `plan.json`。
+- 2026-04-15：已完成步骤 1。后端 FastAPI 基础框架已搭建，提供统一返回格式 `{code, data, message}`，并实现 `POST /api/upload` 上传接口，素材会写入 `assets/{job_id}/` 并生成初始任务元数据。
+- 2026-04-15：已完成步骤 2。已实现 `pipeline/analyze.py`，支持对 `ppt_video` 做本地换页分析，并预留 `qwen3.6-plus-2026-04-02` 的可选关键帧语义增强。
+- 2026-04-15：已完成步骤 3。已实现 `pipeline/plan.py` 与 `scenes.json` 联动，当前可以基于 `ppt_video + subtitles.srt` 生成新的 `plan.json`。
+- 2026-04-15：已完成步骤 4。已实现 `pipeline/render.py`，可基于 `plan.json + ppt_video + speaker_video` 生成 `output/{job_id}/output.mp4`，并更新任务元数据。
+- 2026-04-15：已完成任务 4.3.1 PPT 模板。PPT 画面按 contain 模式放入 16:9 画布，不裁切课件内容。
+- 2026-04-15：已完成任务 4.3.2 Speaker 模板。speaker 仅在视频开头或章节边界出现，并以右下角浅色圆角悬浮窗叠加在 PPT 页面上，不再整屏霸屏；人物名不触发 speaker。
+- 2026-04-15：当前累计已完成开发步骤 1-4，下一步应进入步骤 5：接入 Celery 串联 analyze → plan → render。
 - 2026-04-15：毕设默认工作流已调整为“快速模式优先”，即本地粗切页 + 字幕规划；模型增强保留为可选能力，不作为默认执行路径。
