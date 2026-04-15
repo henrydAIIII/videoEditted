@@ -309,17 +309,14 @@ def choose_scene_role(
     knowledge_score = keyword_hits(text, KNOWLEDGE_KEYWORDS)
     climax_score = keyword_hits(text, CLIMAX_KEYWORDS)
 
+    if index == 0 or is_boundary:
+        return "chapter_switch"
+
     if climax_score >= 2 and duration_seconds >= 6:
         return "climax_montage"
 
-    if has_person:
-        return "person_highlight"
-
     if viewpoint_score >= 2 or ("为什么" in text and duration_seconds <= 10):
         return "viewpoint_statement"
-
-    if index == 0 or is_boundary:
-        return "chapter_switch"
 
     if knowledge_score >= 1:
         return "knowledge_point"
@@ -392,8 +389,8 @@ def build_render_hints(role: str, names: list[str]) -> list[str]:
             "转场优先使用 hard_cut，保证结论感。",
         ],
         "person_highlight": [
-            "以 speaker 镜头承接人物介绍。",
-            "在 speaker 期间叠加 ai_card，使用 graphic_overlay_cut。",
+            "人物名不触发 speaker，默认保留 PPT 主画面。",
+            "人物信息仅作为后续文本卡片候选。",
         ],
         "knowledge_point": [
             "优先展示 ppt 整屏或知识图解，时长控制在 5-10 秒。",
@@ -440,7 +437,7 @@ def build_scene(
         main_scene_type = "speaker"
         transition_in = "hard_cut"
     elif role == "person_highlight":
-        main_scene_type = "speaker"
+        main_scene_type = "ppt"
         transition_in = "hard_cut"
     elif role == "viewpoint_statement":
         main_scene_type = "ai_card"
@@ -466,7 +463,7 @@ def build_scene(
     summary = {
         "chapter_switch": "章节切换段落，建议切入 speaker 镜头稳住叙事。",
         "viewpoint_statement": "观点陈述段落，建议用整屏 ai_card 做强调。",
-        "person_highlight": "人物介绍段落，建议在 speaker 镜头上叠加人物信息卡。",
+        "person_highlight": "人物介绍段落，不触发 speaker，可作为文本信息卡候选。",
         "knowledge_point": "知识点展开段落，建议使用 ppt 或图解整屏展示。",
         "climax_montage": "段落高潮或收束段落，建议使用 rapid_flash_cut 快闪蒙太奇。",
     }[role]
@@ -652,8 +649,8 @@ def generate_plan_from_srt(
         },
         "rules_applied": [
             "观点陈述 -> ai_card 整屏强调",
-            "重要人物 -> speaker + graphic_overlay_cut 叠加人物卡",
-            "章节切换 -> speaker 镜头 8-15 秒",
+            "人物名不触发 speaker；只作为文本信息候选",
+            "视频开头或章节切换 -> speaker 镜头 8-15 秒",
             "知识点展示 -> ppt 整屏 5-10 秒",
             "高潮收束 -> rapid_flash_cut 蒙太奇",
             "普通段落 -> hard_cut",

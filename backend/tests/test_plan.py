@@ -1,6 +1,6 @@
 import json
 
-from pipeline.plan import generate_plan_from_job
+from pipeline.plan import choose_scene_role, generate_plan_from_job
 
 
 SRT_SAMPLE = """1
@@ -57,15 +57,27 @@ def test_generate_plan_from_job_writes_plan_and_updates_metadata(tmp_path):
     assert plan["job_id"] == "job-001"
     assert plan["plan_version"] == "2026-04-15"
     assert plan["summary"]["scene_count"] >= 3
-    assert any(scene["main_scene_type"] == "speaker" for scene in plan["scenes"])
-    assert any(scene["main_scene_type"] == "ai_card" for scene in plan["scenes"])
-    assert any(scene["overlay"] for scene in plan["scenes"])
-    assert any(scene["transition_in"] == "rapid_flash_cut" for scene in plan["scenes"])
-
-    person_scene = next(scene for scene in plan["scenes"] if scene["overlay"])
-    assert person_scene["overlay"]["transition"] == "graphic_overlay_cut"
-    assert person_scene["overlay"]["title"] == "达芬奇"
+    assert plan["scenes"][0]["main_scene_type"] == "speaker"
+    assert plan["scenes"][0]["narrative_role"] == "chapter_switch"
+    assert not any(
+        scene["main_scene_type"] == "speaker" and scene["narrative_role"] == "person_highlight"
+        for scene in plan["scenes"]
+    )
 
     metadata = json.loads((job_dir / "job.json").read_text(encoding="utf-8"))
     assert metadata["files"]["plan"] == "plan.json"
     assert metadata["planning"]["scene_count"] == plan["summary"]["scene_count"]
+
+
+def test_person_name_does_not_trigger_speaker_role():
+    role = choose_scene_role(
+        text="达芬奇在1452年出生于意大利并留下大量手稿",
+        duration_seconds=4.0,
+        has_person=True,
+        is_boundary=False,
+        index=1,
+        block_count=3,
+    )
+
+    assert role != "person_highlight"
+    assert role != "chapter_switch"

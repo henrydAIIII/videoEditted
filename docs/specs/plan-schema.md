@@ -15,11 +15,11 @@
 1. 先读取 `scenes.json` 的视觉段落。
 2. 按视觉段落时间范围，把字幕 cue 分配到对应页面。
 3. 对每段文本做规则判断：
-   - 人物名、年份
    - 观点关键词
    - 知识点关键词
    - 高潮/收束关键词
    - 章节切换触发词
+   - 人物名、年份仅作为文本信息候选，不触发 speaker
 4. 生成最终 scene：
    - `main_scene_type`
    - `transition_in`
@@ -81,9 +81,8 @@
 转场：`hard_cut`
 
 2. 重要人物
-结果：`main_scene_type = speaker`
-叠加：`overlay.type = ai_card`
-叠加转场：`graphic_overlay_cut`
+结果：不触发 `speaker`
+说明：人物名、年份可以作为后续信息卡候选，但不决定人脸出现。
 
 3. 章节切换
 结果：优先 `speaker`
